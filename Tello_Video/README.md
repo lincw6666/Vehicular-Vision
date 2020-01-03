@@ -1,3 +1,17 @@
+# Yolo v3
+
+## Installation
+
+- Follow the commands to install Yolo v3.
+    ```sh=
+    git clone https://github.com/eriklindernoren/PyTorch-YOLOv3 --depth 1
+    cd PyTorch-YOLOv3/
+    pip install -r requirements.txt
+    cd weights/
+    wget -c https://pjreddie.com/media/files/yolov3.weights
+    ```
+- [Hint] If you are using Windows, copy the website for the weights to your browser then you can download it.
+
 # Tello-Video
 
 This is an example using the Tello SDK v1.3.0.0 and above to receive video stream from Tello camera,decode the video stream and show the image by GUI.
