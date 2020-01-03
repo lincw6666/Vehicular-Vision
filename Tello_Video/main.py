@@ -10,7 +10,7 @@ def main():
     
 	# start the Tkinter mainloop
     #vplayer.root.mainloop() 
-    tracker.MainLoop()
+    tracker.vplayer.root.mainloop()
 
 if __name__ == "__main__":
     main()

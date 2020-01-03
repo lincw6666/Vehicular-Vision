@@ -38,13 +38,14 @@ class StrayTracking:
         self.linebotThread.start()
         
         # start the Tkinter mainloop
-        self.UIThread = threading.Thread(target = self.vplayer.root.mainloop)
+        self.UIThread = threading.Thread(target = self.MainLoop)
         self.UIThread.daemon = True
         self.UIThread.start()
         
     def MainLoop(self):
         #Main loop to handle the whole finite state machine
-        print 'self state: %d' % self.state
+        #print 'self state: %d' % self.
+        print self.vplayer.tello.send_command('battery?')
         while not self.isEventFinish():
             if self.state is STATE_INIT:
                 #Do something init state should do
@@ -74,7 +75,7 @@ class StrayTracking:
             elif self.state is STATE_FINISH:
                 if self.Land() == 'ok':
                     return
-            time.sleep(2)
+            time.sleep(3)
                     
     def Patrol(self):
         #Do partrol and return finish or not. Ture means finish, False mean need continue.
@@ -95,15 +96,15 @@ class StrayTracking:
          #Follow the stray animal.
 
         #Setting variables
-        disFromObj = 10*10 #Area of the bbox
+        #disFromObj = 10*10 #Area of the bbox
         centerError = 7 #Pixel
 
         #Distance from the object
-        currentDis = self.bboxWidth * self.bboxLength
-        if currentDis > dis:
-            self.vplayer.tello.move_backward(self.vplayer.distance)
-        else:
-            self.vplayer.tello.move_forward(self.vplayer.distance)
+        #currentDis = self.bboxWidth * self.bboxLength
+        #if currentDis > dis:
+        #    self.vplayer.tello.move_backward(self.vplayer.distance)
+        #else:
+        #    self.vplayer.tello.move_forward(self.vplayer.distance)
 
         #Move object to center
         height, width, _ = self.vplayer.frame.shape

@@ -5,9 +5,14 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError 
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+import configparser
+import tello
 
-line_bot_api = LineBotApi('') #LineBot's Channel access token
-handler = WebhookHandler('')        #LineBot's Channel secret
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+line_bot_api = LineBotApi(config.get('linebot' , 'channel_access_token')) #LineBot's Channel access token
+handler = WebhookHandler(config.get('linebot' , 'secret_key'))        #LineBot's Channel secret
 user_id_set=set()                                         #LineBot's Friend's user id 
 app = Flask(__name__)
 
@@ -66,7 +71,7 @@ def handle_message(event):
     print('GotMsg:{}'.format(Msg))
 
     line_bot_api.reply_message(event.reply_token,TextSendMessage(text="收到訊息!!"))   # Reply API example
-    
+      
     userId = event.source.user_id
     if not userId in user_id_set:
         user_id_set.add(userId)
