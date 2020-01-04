@@ -1,52 +1,98 @@
-from models import *
-from utils.utils import *
-from utils.datasets import *
-
-from PIL import Image
-
-import torch
-import torchvision.transforms as transforms
-
-import argparse
+import cv2
+import time
+import numpy as np
 
 
-if __name__ == "__main__":
-  # Get arguments.
-  parser = argparse.ArgumentParser()
-  parser.add_argument("--pth", help="the path to your image file")
-  args = parser.parse_args()
+class Yolov3:
 
-  # Get the GPU sources.
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, config="Yolo_config/yolov3.cfg",
+        weights="Yolo_config/yolov3.weights"):
+        self.img_resize = (416, 416)    # Same as the setting in `yolov3.cfg`.
+        # Build Yolo_v3 network.
+        self.yolo = cv2.dnn.readNetFromDarknet("yolov3.cfg", "yolov3.weights")
+        # Determine only the *output* layer names that we need from YOLO.
+        self.ln = [self.yolo.getLayerNames()[i[0] - 1] \
+            for i in self.yolo.getUnconnectedOutLayers()]
+        # The predicted bounding boxes and class ids.
+        self.boxes = [] # [x, y, w, h]
+        self.ids = []
+        # To check whether it's the latest data.
+        self.time_stamp = time.time()
 
-  # Set up model
-  model = Darknet('config/yolov3.cfg', img_size=416).to(device)
-  # Load darknet weights
-  model.load_darknet_weights('weights/yolov3.weights')
-  # Set in evaluation mode
-  model.eval()
 
-  classes = load_classes('data/coco.names')  # Extracts class labels from file
+    # @img: the input image array. The order of its channel should be RGB.
+    # @nms_thresh: threshold for non-maximum suppression.
+    def predict(self, img, score_thresh=0.5, nms_thresh=0.5):
+        h, w = img.shape[:2]
 
-  # Configure input
-  origin_img = Image.open(args.pth)
-  img = transforms.ToTensor()(origin_img)
-  origin_shape = img.shape[1:]
-  img, _ = pad_to_square(img, 0)    # Pad to square resolution
-  img = resize(img, 416)[None, :, :, :]  # Resize
-  img = img.to(device)
+        # Construct a blob from the input image and then perform a forward
+        # pass of the YOLO object detector, giving us our bounding boxes and
+        # associated probabilities.
+        blob = cv2.dnn.blobFromImage(img, 1 / 255.0, self.img_resize,
+            swapRB=False, crop=False)
+        self.yolo.setInput(blob)
+        layer_output = self.yolo.forward(self.ln)
 
-  # Get detections
-  with torch.no_grad():
-    detections = model(img)
-    detections = non_max_suppression(detections, 0.8, 0.4)[0]
+        # Initialize our lists of detected bounding boxes, confidences, and
+        # class IDs, respectively.
+        boxes = []
+        confidences = []
+        ids = []
 
-  if detections is not None:
-    # Rescale boxes to original image
-    detections = rescale_boxes(detections, 416, origin_shape)
-    for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
-      if cls_pred not in [0, 15, 16]: # Only detect person, cat and dog.
-        continue
-      print(f'{x1} {y1} {x2} {y2}')
-      box_w = x2 - x1
-      box_h = y2 - y1
+        # Loop over each of the layer outputs.
+        for output in layer_output:
+            # Loop over each of the detections.
+            for detection in output:
+                # Extract the class ID and confidence (i.e., probability) of
+                # the current object detection.
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+        
+                # Filter out weak predictions by ensuring the detected
+                # probability is greater than the minimum probability
+                if confidence > score_thresh:
+                    # Scale the bounding box coordinates back relative to the
+                    # size of the image, keeping in mind that YOLO actually
+                    # returns the center (x, y)-coordinates of the bounding
+                    # box followed by the boxes' width and height
+                    box = detection[0:4] * np.array([w, h, w, h])
+                    (centerX, centerY, width, height) = box.astype("int")
+        
+                    # use the center (x, y)-coordinates to derive the top and
+                    # and left corner of the bounding box
+                    x = int(centerX - (width / 2))
+                    y = int(centerY - (height / 2))
+        
+                    # update our list of bounding box coordinates, confidences,
+                    # and class IDs
+                    boxes.append([x, y, int(width), int(height)])
+                    confidences.append(float(confidence))
+                    ids.append(class_id)
+
+
+        # Apply non-maxima suppression to suppress weak, overlapping bounding
+        # boxes.
+        idxs = cv2.dnn.NMSBoxes(boxes, confidences, score_thresh,
+            nms_thresh)
+
+        # Ensure at least one detection exists.
+        if len(idxs) > 0:
+            index = idxs.flatten()
+            self.boxes = [boxes[i] for i in index]
+            self.ids = [ids[i] for i in index]
+        else:
+            self.boxes = []
+            self.ids = []
+        # Update time stamp.
+        self.time_stamp = time.time()
+        
+
+def debug():
+    yolo = Yolov3(config='yolov3.cfg', weights='yolov3.weights')
+    print(yolo.boxes, yolo.ids, yolo.time_stamp)
+    yolo.predict(cv2.cvtColor(cv2.imread('dog.jpg'), cv2.COLOR_BGR2RGB))
+    print(yolo.boxes, yolo.ids, yolo.time_stamp)
+    print(yolo.boxes, yolo.ids, yolo.time_stamp)
+    yolo.predict(cv2.cvtColor(cv2.imread('dog.jpg'), cv2.COLOR_BGR2RGB))
+    print(yolo.boxes, yolo.ids, yolo.time_stamp)
