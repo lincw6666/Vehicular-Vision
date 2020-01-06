@@ -10,6 +10,8 @@ import time
 import platform
 import Linebot
 from tello_control_ui import TelloUI
+from yolov3 import Yolov3
+import numpy as np
 
 STATE_INIT = 0
 STATE_PATROL = 1
@@ -22,11 +24,10 @@ class StrayTracking:
     def __init__(self,tello,outputpath):
         
         self.vplayer = TelloUI(tello,outputpath) 
+        self.yolo = Yolov3()
         
         self.state = STATE_INIT  #Finite state machine
-        self.bbox = None #stray animal bounding box detected.
-        self.bboxCoorLeftTop = None
-        self.bboxCoorRightBottom = None 
+        self.bboxCenter = None
         self.bboxHeight = None 
         self.bboxWidth = None 
         self.partrolDistance = 0.0 #accumulated distance in patrol mode
@@ -45,7 +46,7 @@ class StrayTracking:
     def MainLoop(self):
         #Main loop to handle the whole finite state machine
         #print 'self state: %d' % self.
-        print self.vplayer.tello.send_command('battery?')
+        #print self.vplayer.tello.send_command('battery?')
         while not self.isEventFinish():
             if self.state is STATE_INIT:
                 #Do something init state should do
@@ -81,17 +82,36 @@ class StrayTracking:
         #Do partrol and return finish or not. Ture means finish, False mean need continue.
         threashold = 5
         response = self.vplayer.tello.move_forward(self.vplayer.distance)
-        print 'forward %f' % self.partrolDistance
+        print response
         if response == 'ok':
             self.partrolDistance += self.vplayer.distance
-            if(self.partrolDistance > threashold):
+            if self.partrolDistance > threashold:
                 return True
                 
         return False
             
     def StrayDection(self):
         #Detect stray animal and return exist stray animal or not. Ture means exist stray animal.
+        Threashold = 150
+        self.yolo.predict(self.vplayer.frame)
+        if len(self.yolo.boxes)>0:
+            ids = np.array(self.yolo.ids)
+            animalIndexes = np.where(ids == 'cat' or ids == 'dog')
+            humanIndexes = np.where(ids == 'person')
+            for animalIndex in animalIndexes:
+                x ,y ,w ,h = self.yolo.box[animalIndex]
+                aniCenter = np.array([x + 0.5*w , y + 0.5*h])
+                for humanIndex in humanIndexes:
+                    X ,Y ,W ,H = self.yolo.box[humanIndex]
+                    humanCenter = np.array([X + 0.5*W , Y+0.5*H])
+                    dist = np.linalg.norm(aniCenter - humanCenter)
+                    if dist > Threashold : 
+                        self.bboxCenter = aniCenter
+                        self.bboxHeight = h
+                        self.bboxWidth = w
+                        return True
         return False 
+        
     def Tracking(self):
          #Follow the stray animal.
 
@@ -107,8 +127,8 @@ class StrayTracking:
         #    self.vplayer.tello.move_forward(self.vplayer.distance)
 
         #Move object to center
-        height, width, _ = self.vplayer.frame.shape
-        currentBboxCenter = (self.bboxCoorLeftTop + self.bboxCoorRightBottom) / 2
+        height, width= self.height , self.width
+        currentBboxCenter = self.bboxCenter
 
         #x direction
         if currentBboxCenter[0] < width/2 - centerError: #Too left
