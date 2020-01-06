@@ -9,7 +9,7 @@ class Yolov3:
         weights="Yolo_config/yolov3.weights"):
         self.img_resize = (416, 416)    # Same as the setting in `yolov3.cfg`.
         # Build Yolo_v3 network.
-        self.yolo = cv2.dnn.readNetFromDarknet("yolov3.cfg", "yolov3.weights")
+        self.yolo = cv2.dnn.readNetFromDarknet(config, weights)
         # Determine only the *output* layer names that we need from YOLO.
         self.ln = [self.yolo.getLayerNames()[i[0] - 1] \
             for i in self.yolo.getUnconnectedOutLayers()]
