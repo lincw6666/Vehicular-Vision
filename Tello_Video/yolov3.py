@@ -75,7 +75,7 @@ class Yolov3:
         # boxes.
         idxs = cv2.dnn.NMSBoxes(boxes, confidences, score_thresh,
             nms_thresh)
-
+        
         # Ensure at least one detection exists.
         if len(idxs) > 0:
             index = idxs.flatten()
@@ -86,9 +86,18 @@ class Yolov3:
             self.ids = []
         # Update time stamp.
         self.time_stamp = time.time()
+        drawbbox(img , self.boxes , self.ids)
         
-
-def debug():
+def drawbbox(img , boxes , ids):
+    for i in range(len(boxes)):
+        x ,y ,w ,h = boxes[i]
+        cv2.rectangle(img , (x,y) , (x+w , y+h) , (0,255,0) , 2)
+        cv2.putText(img , str(ids[i]), (x , y + 30 ) ,cv2.FONT_HERSHEY_SIMPLEX , 1 , (255,255,255) , 2)
+    cv2.imshow("result" , img)    
+    cv2.waitKey(1000)
+    cv2.destroyAllWindows()
+        
+def Debug():
     yolo = Yolov3(config='yolov3.cfg', weights='yolov3.weights')
     print(yolo.boxes, yolo.ids, yolo.time_stamp)
     yolo.predict(cv2.cvtColor(cv2.imread('dog.jpg'), cv2.COLOR_BGR2RGB))

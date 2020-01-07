@@ -24,7 +24,7 @@ class StrayTracking:
     def __init__(self,tello,outputpath):
         
         self.vplayer = TelloUI(tello,outputpath) 
-        self.yolo = Yolov3()
+        self.yolo = Yolov3(config='yolov3.cfg', weights='yolov3.weights')
         
         self.state = STATE_INIT  #Finite state machine
         self.bboxCenter = None
@@ -50,8 +50,7 @@ class StrayTracking:
         while not self.isEventFinish():
             if self.state is STATE_INIT:
                 #Do something init state should do
-                #self.Takeoff()
-                self.vplayer.tello.takeoff()
+                self.Takeoff()
                 time.sleep(7)
                 self.state = STATE_PATROL
                 
@@ -59,57 +58,69 @@ class StrayTracking:
                 #Do patrol
                 isFinish = self.Patrol()
                 if isFinish:
+                    print "Patrol Finish!!"
                     self.state = STATE_FINISH
-                    
                 elif self.StrayDection():
-                    Linebot.SendMassage("Detect stray animal!!!!")
+                    print "Detect Stray animal!!!"
+                    Linebot.SendMessage("Detect stray animal!!!!")
                     self.state = STATE_TRACKING
                     
             elif self.state is STATE_TRACKING:
                 #Do tracking
                 self.Tracking()
                 if not self.StrayDection():
+                    print 'Lost object!! Ready to Land.....'
                     self.state = STATE_FINISH
                 else :
-                    Linebot.SendMassage("Tracking....")
+                    print "Tracking...."
+                    Linebot.SendMessage("Tracking....")
                     
             elif self.state is STATE_FINISH:
                 if self.Land() == 'ok':
+                    print 'Land success!!!!'
                     return
-            time.sleep(3)
+            time.sleep(1.5)
                     
     def Patrol(self):
         #Do partrol and return finish or not. Ture means finish, False mean need continue.
         threashold = 5
-        response = self.vplayer.tello.move_forward(self.vplayer.distance)
+        #response = self.vplayer.tello.move_forward(self.vplayer.distance)
+        response = 'ok'
         print response
         if response == 'ok':
             self.partrolDistance += self.vplayer.distance
             if self.partrolDistance > threashold:
-                return True
+                return False #need modify
                 
         return False
             
     def StrayDection(self):
         #Detect stray animal and return exist stray animal or not. Ture means exist stray animal.
         Threashold = 150
+        if self.vplayer.frame is None or self.vplayer.frame.size == 0: return
         self.yolo.predict(self.vplayer.frame)
         if len(self.yolo.boxes)>0:
             ids = np.array(self.yolo.ids)
-            animalIndexes = np.where(ids == 'cat' or ids == 'dog')
-            humanIndexes = np.where(ids == 'person')
+            animalIndexes = np.concatenate((np.where(ids == 15)[0] , np.where(ids == 16)[0]))#dog
+            humanIndexes = np.where(ids == 0)[0]#person
+            humanIndexes = [] #need modify
             for animalIndex in animalIndexes:
-                x ,y ,w ,h = self.yolo.box[animalIndex]
+                x ,y ,w ,h = self.yolo.boxes[animalIndex]
                 aniCenter = np.array([x + 0.5*w , y + 0.5*h])
+                isStray = True ;
                 for humanIndex in humanIndexes:
-                    X ,Y ,W ,H = self.yolo.box[humanIndex]
+                    X ,Y ,W ,H = self.yolo.boxes[humanIndex]
                     humanCenter = np.array([X + 0.5*W , Y+0.5*H])
                     dist = np.linalg.norm(aniCenter - humanCenter)
-                    if dist > Threashold : 
-                        self.bboxCenter = aniCenter
-                        self.bboxHeight = h
-                        self.bboxWidth = w
-                        return True
+                    if dist < Threashold : 
+                        isStray = False
+                        break
+                if isStray == True:
+                    self.bboxCenter = aniCenter
+                    self.bboxHeight = h
+                    self.bboxWidth = w
+                    #print "Stray detected!"
+                    return True
         return False 
         
     def Tracking(self):
@@ -117,7 +128,7 @@ class StrayTracking:
 
         #Setting variables
         #disFromObj = 10*10 #Area of the bbox
-        centerError = 7 #Pixel
+        centerError = 100 #Pixel
 
         #Distance from the object
         #currentDis = self.bboxWidth * self.bboxLength
@@ -127,7 +138,7 @@ class StrayTracking:
         #    self.vplayer.tello.move_forward(self.vplayer.distance)
 
         #Move object to center
-        height, width= self.height , self.width
+        height, width= 720 , 1280
         currentBboxCenter = self.bboxCenter
 
         #x direction
@@ -137,11 +148,12 @@ class StrayTracking:
             self.Rotate_CW(self.vplayer.degree)
 
         #y direction
-        if currentBboxCenter[1] < height/2 - centerError: #Too top
+        elif currentBboxCenter[1] < height/2 - centerError: #Too top
             self.vplayer.tello.move_backward(self.vplayer.distance)
         elif currentBboxCenter[1] > height/2 + centerError: #Too bottom
             self.vplayer.tello.move_forward(self.vplayer.distance)
         return
+        
     def Land(self):
         #Drone land. Turn 'OK' or 'FALSE'
         return self.vplayer.tello.land()
@@ -149,10 +161,10 @@ class StrayTracking:
     def Takeoff(self):
         return self.vplayer.tello.takeoff()
         
-    def RotateCW(self , degree):
+    def Rotate_CW(self , degree):
         return self.vplayer.tello.rotate_cw(degree)
        
-    def RotateCCW(self , degree):
+    def Rotate_CCW(self , degree):
         return self.vplayer.tello.rotate_ccw(degree)
     
     def isEventFinish(self): #Return Ture means finish
