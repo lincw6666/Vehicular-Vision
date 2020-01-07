@@ -8,6 +8,7 @@ import cv2
 import os
 import time
 import platform
+import numpy as np
 
 class TelloUI:
     """Wrapper class to enable the GUI."""
@@ -29,7 +30,7 @@ class TelloUI:
         self.stopEvent = None  
         
         # control variables
-        self.distance = 0.9  # default distance for 'move' cmd
+        self.distance = 0.7  # default distance for 'move' cmd
         self.degree = 10  # default degree for 'cw' or 'ccw' cmd
 
         # if the flag is TRUE,the auto-takeoff thread will stop waiting for the response from tello
@@ -83,10 +84,9 @@ class TelloUI:
                 self.frame = self.tello.read()
                 if self.frame is None or self.frame.size == 0:
                     continue 
-            
             # transfer the format from frame to image         
                 image = Image.fromarray(self.frame)
-
+                
             # we found compatibility problem between Tkinter,PIL and Macos,and it will 
             # sometimes result the very long preriod of the "ImageTk.PhotoImage" function,
             # so for Macos,we start a new thread to execute the _updateGUIImage function.

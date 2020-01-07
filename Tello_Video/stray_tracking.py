@@ -26,6 +26,9 @@ class StrayTracking:
         self.vplayer = TelloUI(tello,outputpath) 
         self.yolo = Yolov3(config='yolov3.cfg', weights='yolov3.weights')
         
+        self.FailDectionTimes = 0
+        self.PatrolTimes = 0
+        
         self.state = STATE_INIT  #Finite state machine
         self.bboxCenter = None
         self.bboxHeight = None 
@@ -51,7 +54,7 @@ class StrayTracking:
             if self.state is STATE_INIT:
                 #Do something init state should do
                 self.Takeoff()
-                time.sleep(7)
+                time.sleep(5)
                 self.state = STATE_PATROL
                 
             elif self.state is STATE_PATROL:
@@ -62,48 +65,68 @@ class StrayTracking:
                     self.state = STATE_FINISH
                 elif self.StrayDection():
                     print "Detect Stray animal!!!"
-                    Linebot.SendMessage("Detect stray animal!!!!")
+                    #Linebot.SendMessage("Detect stray animal!!!!")
                     self.state = STATE_TRACKING
                     
             elif self.state is STATE_TRACKING:
                 #Do tracking
-                self.Tracking()
                 if not self.StrayDection():
-                    print 'Lost object!! Ready to Land.....'
-                    self.state = STATE_FINISH
+                    self.FailDectionTimes = self.FailDectionTimes + 1
+                    print 'Lost object!! '
+                    if self.FailDectionTimes <= 3:
+                        self.vplayer.tello.move_forward(self.vplayer.distance/2)
+                    elif self.FailDectionTimes == 4:
+                        self.Rotate_CCW(self.vplayer.degree)
+                    elif self.FailDectionTimes == 5:
+                        self.Rotate_CW(self.vplayer.degree*2)
+                    else:
+                        print "Ready to Land...."
+                        self.state = STATE_FINISH
                 else :
+                    self.Tracking()
+                    self.FailDectionTimes = 0
                     print "Tracking...."
-                    Linebot.SendMessage("Tracking....")
+                    #Linebot.SendMessage("Tracking....")
                     
             elif self.state is STATE_FINISH:
                 if self.Land() == 'ok':
                     print 'Land success!!!!'
                     return
-            time.sleep(1.5)
+            time.sleep(1.)
                     
     def Patrol(self):
         #Do partrol and return finish or not. Ture means finish, False mean need continue.
-        threashold = 5
-        #response = self.vplayer.tello.move_forward(self.vplayer.distance)
-        response = 'ok'
-        print response
+        threashold = 4.9
+        if self.PatrolTimes == 0 :
+            response = self.vplayer.tello.move_forward(self.vplayer.distance)
+        elif self.PatrolTimes ==1 :
+            response = self.Rotate_CCW(self.vplayer.degree)
+        elif self.PatrolTimes ==2 :
+            response = self.Rotate_CW(2*self.vplayer.degree)
+        elif self.PatrolTimes ==3 :
+            response = self.Rotate_CCW(self.vplayer.degree)
+        #response = 'ok'
+        #print response
         if response == 'ok':
-            self.partrolDistance += self.vplayer.distance
-            if self.partrolDistance > threashold:
-                return False #need modify
+            self.PatrolTimes += 1
+            self.PatrolTimes %= 4
+            if self.PatrolTimes == 1:
+                self.partrolDistance += self.vplayer.distance
+                if self.partrolDistance > threashold:
+                    return True
                 
         return False
             
     def StrayDection(self):
         #Detect stray animal and return exist stray animal or not. Ture means exist stray animal.
-        Threashold = 150
+        Threashold = 300 #smaller means that it is easily consider as stray animal
         if self.vplayer.frame is None or self.vplayer.frame.size == 0: return
         self.yolo.predict(self.vplayer.frame)
         if len(self.yolo.boxes)>0:
             ids = np.array(self.yolo.ids)
-            animalIndexes = np.concatenate((np.where(ids == 15)[0] , np.where(ids == 16)[0]))#dog
+            animalIndexes = np.where(ids == 56)[0]#dog
             humanIndexes = np.where(ids == 0)[0]#person
-            humanIndexes = [] #need modify
+            #humanIndexes = [] #need modify
             for animalIndex in animalIndexes:
                 x ,y ,w ,h = self.yolo.boxes[animalIndex]
                 aniCenter = np.array([x + 0.5*w , y + 0.5*h])
@@ -111,7 +134,9 @@ class StrayTracking:
                 for humanIndex in humanIndexes:
                     X ,Y ,W ,H = self.yolo.boxes[humanIndex]
                     humanCenter = np.array([X + 0.5*W , Y+0.5*H])
-                    dist = np.linalg.norm(aniCenter - humanCenter)
+                    dist = np.linalg.norm(aniCenter - humanCenter) #consider the distance of box center
+                    dist += 0.6*(abs((Y+H) - (y+h)))# consider the distance of forward/backward
+                    print "Distance: " + str(dist)
                     if dist < Threashold : 
                         isStray = False
                         break
@@ -127,32 +152,41 @@ class StrayTracking:
          #Follow the stray animal.
 
         #Setting variables
-        #disFromObj = 10*10 #Area of the bbox
-        centerError = 100 #Pixel
+        disFromObj = 100*100 #Area of the bbox
+        centerError = 160 #Pixel
 
-        #Distance from the object
-        #currentDis = self.bboxWidth * self.bboxLength
-        #if currentDis > dis:
-        #    self.vplayer.tello.move_backward(self.vplayer.distance)
-        #else:
-        #    self.vplayer.tello.move_forward(self.vplayer.distance)
 
         #Move object to center
-        height, width= 720 , 1280
+        height, width= 720 , 960
         currentBboxCenter = self.bboxCenter
+        currentDis = self.bboxWidth * self.bboxHeight
+       
+        print currentBboxCenter
+        print currentDis
 
         #x direction
         if currentBboxCenter[0] < width/2 - centerError: #Too left
             self.Rotate_CCW(self.vplayer.degree)
+            print 'CCW'
         elif currentBboxCenter[0] > width/2 + centerError: #Too right
             self.Rotate_CW(self.vplayer.degree)
+            print 'CW'
+        
+        #Distance from the object
+        
+        elif currentDis/disFromObj > 5:
+            self.vplayer.tello.move_backward(self.vplayer.distance)
+            print 'move backward'
+        elif currentDis/disFromObj < 4:
+            self.vplayer.tello.move_forward(self.vplayer.distance)
+            print 'move forward'
 
         #y direction
-        elif currentBboxCenter[1] < height/2 - centerError: #Too top
-            self.vplayer.tello.move_backward(self.vplayer.distance)
-        elif currentBboxCenter[1] > height/2 + centerError: #Too bottom
-            self.vplayer.tello.move_forward(self.vplayer.distance)
-        return
+        #elif currentBboxCenter[1]= < height/2 - ccurrentBboxCenter[1]: #Too top
+        #    self.vplayer.tello.move_backward(self.vplayer.distance)
+        #elif currentBboxCenter[1] > height/2 + centerError: #Too bottom
+        #    self.vplayer.tello.move_forward(self.vplayer.distance)
+        #return
         
     def Land(self):
         #Drone land. Turn 'OK' or 'FALSE'
